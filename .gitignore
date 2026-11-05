@@ -1,0 +1,13 @@
+node_modules/
+.netlify/
+cloud/site/
+dist/
+.env
+.env.*
+*.sqlite*
+data/
+backups/
+*firebase-adminsdk*.json
+*serviceAccount*.json
+*service-account*.json
+*.key

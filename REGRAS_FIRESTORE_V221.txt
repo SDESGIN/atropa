@@ -1,0 +1,134 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('suspended',false) != true && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('deletionPending',false) != true; }
+    function member(serverId) {
+      return signedIn() && exists(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid));
+    }
+    function mod(serverId) {
+      return member(serverId) && (
+        get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId == request.auth.uid ||
+        get(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid)).data.role == 'moderator'
+      );
+    }
+    function channelRead(serverId,channelId) {
+      return member(serverId) && (
+        mod(serverId) ||
+        (get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data.get('visibility','everyone') == 'everyone') ||
+        (get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data.get('visibility','everyone') == 'roles' &&
+          get(/databases/$(database)/documents/servers/$(serverId)/members/$(request.auth.uid)).data.get('customRoleIds',[]).hasAny(
+            get(/databases/$(database)/documents/servers/$(serverId)/channels/$(channelId)).data.get('readRoleIds',[])))
+      );
+    }
+    function friendsWith(otherUid) {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        otherUid in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.friends &&
+        exists(/databases/$(database)/documents/users/$(otherUid)) &&
+        request.auth.uid in get(/databases/$(database)/documents/users/$(otherUid)).data.friends;
+    }
+    function dmOther(threadId) {
+      return get(/databases/$(database)/documents/dmThreads/$(threadId)).data.members[0] == request.auth.uid ?
+        get(/databases/$(database)/documents/dmThreads/$(threadId)).data.members[1] :
+        get(/databases/$(database)/documents/dmThreads/$(threadId)).data.members[0];
+    }
+    function dmAccess(threadId) {
+      return signedIn() && exists(/databases/$(database)/documents/dmThreads/$(threadId)) &&
+        request.auth.uid in get(/databases/$(database)/documents/dmThreads/$(threadId)).data.members &&
+        get(/databases/$(database)/documents/dmThreads/$(threadId)).data.members.size() == 2 &&
+        exists(/databases/$(database)/documents/users/$(dmOther(threadId))) &&
+        !(dmOther(threadId) in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('blocked',[])) &&
+        !(request.auth.uid in get(/databases/$(database)/documents/users/$(dmOther(threadId))).data.get('blocked',[])) &&
+        (get(/databases/$(database)/documents/dmThreads/$(threadId)).data.get('accepted',false) == true || friendsWith(dmOther(threadId)));
+    }
+    match /accounts/{username} { allow read, write: if false; }
+    match /invites/{invite} { allow read, write: if false; }
+    match /meta/{document} { allow read, write: if false; }
+    match /officialAudit/{id} { allow read, write: if false; }
+    match /media/{id} { allow read, write: if false; }
+    match /dmRequests/{id} { allow read, write: if false; }
+    match /mediaQuota/{id} { allow read, write: if false; }
+    match /webhooks/{id} { allow read, write: if false; }
+    match /aiOperations/{id} { allow read, write: if false; }
+    match /supportTickets/{id} { allow read, write: if false; }
+    match /supportDaily/{id} { allow read, write: if false; }
+    match /users/{userId} {
+      allow get: if signedIn() && request.auth.uid == userId;
+      allow list, create, update, delete: if false;
+    }
+    // Conversas privadas: apenas participantes conseguem ler as mensagens.
+    // Nenhum cliente escreve diretamente; todas as mensagens passam pela API autenticada.
+    match /dmThreads/{threadId} {
+      allow get: if dmAccess(threadId);
+      allow list, create, update, delete: if false;
+      match /messages/{messageId} {
+        allow get, list: if dmAccess(threadId);
+        allow create, update, delete: if false;
+      }
+    }
+    // Apenas o destinatário ou remetente vê seu próprio índice, nunca a coleção global.
+    match /users/{userId}/dmRequests/{requestId} {
+      allow get, list: if signedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+    match /users/{userId}/dmThreads/{threadId} {
+      allow get, list: if signedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+    // Grupos privados: membros podem ler; escrita sempre passa pela API.
+    match /groupThreads/{groupId} {
+      allow get: if signedIn() && request.auth.uid in resource.data.members;
+      allow list, create, update, delete: if false;
+      match /messages/{messageId} {
+        allow get, list: if signedIn()
+          && exists(/databases/$(database)/documents/groupThreads/$(groupId))
+          && request.auth.uid in get(/databases/$(database)/documents/groupThreads/$(groupId)).data.members;
+        allow create, update, delete: if false;
+      }
+    }
+    match /users/{userId}/groupThreads/{groupId} {
+      allow get, list: if signedIn() && request.auth.uid == userId;
+      allow create, update, delete: if false;
+    }
+    match /servers/{serverId} {
+      allow get: if member(serverId);
+      allow list, create, update, delete: if false;
+      match /categories/{categoryId} { allow get, list: if member(serverId); allow create, update, delete: if false; }
+      match /roles/{roleId} { allow get, list: if member(serverId); allow create, update, delete: if false; }
+      // Enquetes e eventos lidos apenas por membros. Escrita somente pela Function.
+      match /polls/{pollId} {
+        allow get, list: if member(serverId);
+        allow create, update, delete: if false;
+      }
+      match /events/{eventId} {
+        allow get, list: if member(serverId);
+        allow create, update, delete: if false;
+      }
+      // Moderation reports are accessible only to the authenticated backend.
+      match /reports/{reportId} { allow read, write: if false; }
+      match /members/{userId} {
+        allow get, list: if member(serverId);
+        allow create, update, delete: if false;
+      }
+      match /channels/{channelId} {
+        // V33: nomes/metadados de canais privados NÃO podem vazar via collection().
+        // A listagem com ACL agora passa por /api/channels/list (Firebase Admin).
+        allow get: if channelRead(serverId,channelId);
+        allow list: if false;
+        allow create, update, delete: if false;
+        match /threads/{topicId} {
+          allow get, list: if channelRead(serverId,channelId);
+          allow create, update, delete: if false;
+          match /replies/{replyId} {
+            allow get, list: if channelRead(serverId,channelId);
+            allow create, update, delete: if false;
+          }
+        }
+        match /messages/{messageId} {
+          allow get, list: if channelRead(serverId,channelId);
+          allow create, update, delete: if false;
+        }
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -1,0 +1,24 @@
+TROPA V51 FINAL — VERSÃO 5.1.0
+
+ATUALIZAÇÃO DE POLIMENTO DA TROPA JÁ PUBLICADA.
+Mantém autenticação por nome de usuário e senha (sem e-mail), código de recuperação, NitroPA, Firebase e chamadas LiveKit.
+
+INSTALAÇÃO NO GITHUB:
+1. Guarde o commit anterior (V50) como ponto de reversão.
+2. Extraia TROPA-V51-FINAL-GITHUB-SEM-PASTAS.zip no seu computador.
+3. Envie SOMENTE os oito arquivos encontrados, SOLTOS, para a raiz do repositório do GitHub. Substitua os anteriores; não crie uma pasta V51.
+4. A Netlify executará MONTAR_TROPA_V22.cjs para reconstruir o restante do projeto durante o build.
+5. Na Netlify: Node.js 22; build npm run build:cloud; publicação cloud/site; funções cloud/functions.
+6. Faça primeiro o deploy de prévia. Após publicar, /api/health deverá mostrar 5.1.0.
+
+VERIFICAÇÃO:
+- Testes locais: npm run check:v51 (após reconstruir arquivos e ter Node.js instalado).
+- Navegue pelos canais, busque e abra mensagens antigas, teste fixadas, histórico e rolagem.
+- Abra Configurações, use Tab, Shift+Tab e Esc; confira mobile e desktop.
+- Desconecte e reconecte a internet para verificar o indicador offline.
+- Confirme chamadas LiveKit em duas contas reais antes de substituir a produção.
+
+DETALHES: CHANGELOG-V51.md e docs/V51-FINAL-CICLO.md, reconstruídos no build.
+
+Esta versão não requer migração do Firestore e não altera credenciais Firebase/LiveKit. Não envie arquivos .env reais nem segredos ao repositório.
+A edição final encerra este ciclo de melhorias, mas não é uma garantia de ausência de bugs em todos os dispositivos.
